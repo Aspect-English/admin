@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aspect K書會館｜管理員後台</title>
+  <style>
+    body {
+      font-family: "Microsoft JhengHei", Arial, sans-serif;
+      background: #f5f1e8;
+      padding: 20px;
+      margin: 0;
+      color: #333;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    h1 { text-align: center; color: #8b3a0e; margin-bottom: 20px; }
+    .box {
+      background: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 18px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    h2 { margin-top: 0; font-size: 20px; color: #333; }
+    input, select {
+      width: 100%;
+      padding: 12px;
+      margin: 8px 0 12px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+    }
+    button {
+      border: none;
+      border-radius: 8px;
+      padding: 10px 12px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 3px;
+      background: #8b3a0e;
+      color: #fff;
+      font-weight: bold;
+    }
+    button.secondary { background: #666; }
+    button.success { background: #2e7d32; }
+    button.warning { background: #d97706; }
+    button.danger { background: #c62828; }
+    button:disabled { background: #bbb; cursor: not-allowed; }
+    table { width: 100%; border-collapse: collapse; background: white; }
+    th, td {
+      border-bottom: 1px solid #eee;
+      padding: 10px;
+      text-align: left;
+      font-size: 14px;
+      vertical-align: top;
+    }
+    th { background: #f7efe8; color: #8b3a0e; }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .booked { background: #e8f5e9; color: #2e7d32; }
+    .cancelled { background: #ffebee; color: #c62828; }
+    .checked { background: #e3f2fd; color: #1565c0; }
+    .pending { background: #fff7ed; color: #d97706; }
+    .noshow { background: #eeeeee; color: #555; }
+    #summary { white-space: pre-line; line-height: 1.8; }
+    .small { color: #777; font-size: 13px; line-height: 1.6; }
+    @media (max-width: 768px) {
+      .row { grid-template-columns: 1fr; }
+      table, thead, tbody, th, td, tr { display: block; }
+      thead { display: none; }
+      tr { border: 1px solid #eee; border-radius: 10px; margin-bottom: 12px; padding: 10px; }
+      td { border-bottom: none; padding: 6px; }
+      td::before { font-weight: bold; color: #8b3a0e; display: block; }
+      td:nth-child(1)::before { content: "姓名"; }
+      td:nth-child(2)::before { content: "電話 / Email"; }
+      td:nth-child(3)::before { content: "日期 / 時段"; }
+      td:nth-child(4)::before { content: "座位"; }
+      td:nth-child(5)::before { content: "狀態"; }
+      td:nth-child(6)::before { content: "操作"; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Aspect K書會館｜管理員後台</h1>
+
+    <div class="box">
+      <h2>查詢預約</h2>
+      <div class="row">
+        <div>
+          <label>日期</label>
+          <input type="date" id="searchDate" />
+        </div>
+        <div>
+          <label>搜尋姓名 / 電話 / Email</label>
+          <input id="keyword" placeholder="可空白，或輸入姓名、電話、Email" />
+        </div>
+        <div>
+          <label>狀態</label>
+          <select id="statusFilter">
+            <option value="booked">已預約</option>
+            <option value="cancelled">已取消</option>
+            <option value="all">全部</option>
+          </select>
+        </div>
+      </div>
+      <button type="button" onclick="loadReservations()">查詢</button>
+      <button type="button" class="secondary" onclick="setTodayAndLoad()">今日預約</button>
+      <button type="button" class="secondary" onclick="setTomorrowAndLoad()">明日預約</button>
+      <p class="small">此頁為櫃台內部使用。取消預約建議使用既有 admin-cancel 連結流程，避免 Supabase 與 Google Sheet 不同步。</p>
+    </div>
+
+    <div class="box">
+      <h2>統計</h2>
+      <p id="summary">尚未查詢</p>
+    </div>
+
+    <div class="box">
+      <h2>預約列表</h2>
+      <div id="tableArea">請先查詢</div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script>
+    const SUPABASE_URL = "https://uebzafxelfpfmpqbcgwd.supabase.co";
+    const SUPABASE_ANON_KEY = "sb_publishable_JTcWsklR-rYX5AqKYxdymQ_b746IsEe";
+    const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzI_ReRWMB4sEtKLYbZ_rzm5O_f8iyz4F_l_IORoVg6R1bSlXaQROgQf1WOFwSHy9RWAA/exec";
+    const ADMIN_CANCEL_BASE_URL = "https://aspect-english.github.io/admin-cancel/";
+
+    const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    let currentRows = [];
+
+    function getTodayString() {
+      const today = new Date();
+      const yyyy = today.getFullYear();
+      const mm = String(today.getMonth() + 1).padStart(2, "0");
+      const dd = String(today.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function addDays(days) {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function setTodayAndLoad() {
+      document.getElementById("searchDate").value = getTodayString();
+      document.getElementById("statusFilter").value = "booked";
+      loadReservations();
+    }
+
+    function setTomorrowAndLoad() {
+      document.getElementById("searchDate").value = addDays(1);
+      document.getElementById("statusFilter").value = "booked";
+      loadReservations();
+    }
+
+    function buildAdminCancelUrl(row) {
+      return ADMIN_CANCEL_BASE_URL +
+        "?date=" + encodeURIComponent(row.booking_date || "") +
+        "&phone=" + encodeURIComponent(row.phone || "") +
+        "&email=" + encodeURIComponent(row.email || "") +
+        "&token=" + encodeURIComponent(row.cancel_token || "");
+    }
+
+    function getCheckinStatusText(row) {
+      const status = row.checkin_status || "pending";
+      if (status === "checked_in") return "已報到";
+      if (status === "no_show") return "未報到";
+      return "尚未報到";
+    }
+
+    function getCheckinBadgeClass(row) {
+      const status = row.checkin_status || "pending";
+      if (status === "checked_in") return "checked";
+      if (status === "no_show") return "noshow";
+      return "pending";
+    }
+
+    async function loadReservations() {
+      const date = document.getElementById("searchDate").value;
+      const keyword = document.getElementById("keyword").value.trim().toLowerCase();
+      const statusFilter = document.getElementById("statusFilter").value;
+      const tableArea = document.getElementById("tableArea");
+      const summary = document.getElementById("summary");
+
+      if (!date) {
+        alert("請先選擇日期");
+        return;
+      }
+
+      tableArea.innerHTML = "讀取中...";
+      summary.innerText = "讀取中...";
+
+      let query = supabaseClient
+        .from("reservations")
+        .select("id, user_name, phone, email, booking_date, time_slot, row_group, status, cancel_token, checkin_status, checked_in_at, no_show_at")
+        .eq("booking_date", date)
+        .order("time_slot", { ascending: true });
+
+      if (statusFilter !== "all") {
+        query = query.eq("status", statusFilter);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        tableArea.innerHTML = "查詢失敗：" + error.message + "<br><br>若錯誤提到 checkin_status、checked_in_at 或 no_show_at，請先到 Supabase 新增這些欄位。";
+        summary.innerText = "查詢失敗";
+        return;
+      }
+
+      currentRows = (data || []).filter(row => {
+        if (!keyword) return true;
+        return String(row.user_name || "").toLowerCase().includes(keyword) ||
+               String(row.phone || "").toLowerCase().includes(keyword) ||
+               String(row.email || "").toLowerCase().includes(keyword);
+      });
+
+      renderSummary(currentRows);
+      renderTable(currentRows);
+    }
+
+    function renderSummary(rows) {
+      const total = rows.length;
+      const booked = rows.filter(r => r.status === "booked").length;
+      const cancelled = rows.filter(r => r.status === "cancelled").length;
+      const checkedIn = rows.filter(r => r.checkin_status === "checked_in").length;
+      const noShow = rows.filter(r => r.checkin_status === "no_show").length;
+      const pending = rows.filter(r => (r.checkin_status || "pending") === "pending" && r.status === "booked").length;
+
+      document.getElementById("summary").innerText =
+        "查詢筆數：" + total + "\n" +
+        "已預約：" + booked + "\n" +
+        "已取消：" + cancelled + "\n" +
+        "已報到：" + checkedIn + "\n" +
+        "尚未報到：" + pending + "\n" +
+        "未報到：" + noShow;
+    }
+
+    function renderTable(rows) {
+      const tableArea = document.getElementById("tableArea");
+
+      if (!rows || rows.length === 0) {
+        tableArea.innerHTML = "查無資料";
+        return;
+      }
+
+      let html = `
+        <table>
+          <thead>
+            <tr>
+              <th>姓名</th>
+              <th>電話 / Email</th>
+              <th>日期 / 時段</th>
+              <th>座位</th>
+              <th>狀態</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      rows.forEach(row => {
+        const statusClass = row.status === "cancelled" ? "cancelled" : "booked";
+        const statusText = row.status === "cancelled" ? "已取消" : "已預約";
+        const checkinClass = getCheckinBadgeClass(row);
+        const checkinText = getCheckinStatusText(row);
+        const cancelUrl = buildAdminCancelUrl(row);
+
+        html += `
+          <tr>
+            <td>${row.user_name || ""}</td>
+            <td>${row.phone || ""}<br>${row.email || ""}</td>
+            <td>${row.booking_date || ""}<br>${row.time_slot || ""}</td>
+            <td>${row.row_group || ""}</td>
+            <td>
+              <span class="badge ${statusClass}">${statusText}</span><br><br>
+              <span class="badge ${checkinClass}">${checkinText}</span>
+            </td>
+            <td>
+              <button class="success" onclick="markCheckedIn('${row.id}')" ${row.status !== "booked" ? "disabled" : ""}>已報到</button>
+              <button class="warning" onclick="markNoShow('${row.id}')" ${row.status !== "booked" ? "disabled" : ""}>未報到</button>
+              <button class="danger" onclick="window.open('${cancelUrl}', '_blank')" ${row.status !== "booked" ? "disabled" : ""}>櫃台取消</button>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `</tbody></table>`;
+      tableArea.innerHTML = html;
+    }
+
+    async function markCheckedIn(id) {
+      const ok = confirm("確認將此筆預約標記為已報到嗎？");
+      if (!ok) return;
+
+      const { error } = await supabaseClient
+        .from("reservations")
+        .update({
+          checkin_status: "checked_in",
+          checked_in_at: new Date().toISOString()
+        })
+        .eq("id", id);
+
+      if (error) {
+        alert("更新已報到失敗：" + error.message);
+        return;
+      }
+
+      sendCheckinToGoogleScript(id, "已報到");
+      alert("已標記為已報到");
+      loadReservations();
+    }
+
+    async function markNoShow(id) {
+      const ok = confirm("確認將此筆預約標記為未報到嗎？\n此動作目前只標記狀態，不會自動寄信。若要釋放座位，可再搭配後續自動釋放功能。");
+      if (!ok) return;
+
+      const { error } = await supabaseClient
+        .from("reservations")
+        .update({
+          checkin_status: "no_show",
+          no_show_at: new Date().toISOString()
+        })
+        .eq("id", id);
+
+      if (error) {
+        alert("更新未報到失敗：" + error.message);
+        return;
+      }
+
+      sendCheckinToGoogleScript(id, "未報到");
+      alert("已標記為未報到");
+      loadReservations();
+    }
+
+    function sendCheckinToGoogleScript(id, checkinStatus) {
+      const row = currentRows.find(item => String(item.id) === String(id));
+      if (!row) return;
+
+      const payload = {
+        action: "checkin",
+        token: row.cancel_token,
+        email: row.email,
+        phone: row.phone,
+        date: row.booking_date,
+        time: row.time_slot,
+        row: row.row_group,
+        checkinStatus: checkinStatus
+      };
+
+      const form = document.createElement("form");
+      form.method = "POST";
+      form.action = SCRIPT_URL;
+      form.target = "hidden_iframe";
+
+      const iframe = document.createElement("iframe");
+      iframe.name = "hidden_iframe";
+      iframe.style.display = "none";
+      document.body.appendChild(iframe);
+
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "payload";
+      input.value = JSON.stringify(payload);
+
+      form.appendChild(input);
+      document.body.appendChild(form);
+      form.submit();
+
+      setTimeout(() => {
+        document.body.removeChild(form);
+        document.body.removeChild(iframe);
+      }, 1000);
+    }
+
+    window.addEventListener("DOMContentLoaded", function() {
+      document.getElementById("searchDate").value = getTodayString();
+      loadReservations();
+    });
+  </script>
+</body>
+</html>
