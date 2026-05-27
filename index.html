@@ -92,6 +92,7 @@
   </style>
 </head>
 <body>
+  <iframe name="hidden_iframe" style="display:none;"></iframe>
   <div class="container">
     <h1>Aspect K書會館｜管理員後台</h1>
 
@@ -354,16 +355,24 @@
 
     function sendCheckinToGoogleScript(id, checkinStatus) {
       const row = currentRows.find(item => String(item.id) === String(id));
-      if (!row) return;
+      if (!row) {
+        console.warn("找不到要同步到 Google Sheet 的預約資料");
+        return;
+      }
+
+      if (!row.cancel_token) {
+        alert("此筆資料缺少取消驗證碼，無法同步 Google Sheet。");
+        return;
+      }
 
       const payload = {
         action: "checkin",
         token: row.cancel_token,
-        email: row.email,
-        phone: row.phone,
-        date: row.booking_date,
-        time: row.time_slot,
-        row: row.row_group,
+        email: row.email || "",
+        phone: row.phone || "",
+        date: row.booking_date || "",
+        time: row.time_slot || "",
+        row: row.row_group || "",
         checkinStatus: checkinStatus
       };
 
@@ -371,11 +380,6 @@
       form.method = "POST";
       form.action = SCRIPT_URL;
       form.target = "hidden_iframe";
-
-      const iframe = document.createElement("iframe");
-      iframe.name = "hidden_iframe";
-      iframe.style.display = "none";
-      document.body.appendChild(iframe);
 
       const input = document.createElement("input");
       input.type = "hidden";
@@ -388,7 +392,6 @@
 
       setTimeout(() => {
         document.body.removeChild(form);
-        document.body.removeChild(iframe);
       }, 1000);
     }
 
