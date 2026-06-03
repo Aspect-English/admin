@@ -329,6 +329,8 @@
             </td>
             <td>
               <button class="success" onclick="markCheckedIn('${row.id}')" ${row.status !== "booked" ? "disabled" : ""}>已報到</button>
+              <button class="success" onclick="markPaymentPaid('${row.id}')" ${row.status !== "booked" ? "disabled" : ""}>已匯款</button>
+              <button class="warning" onclick="markPaymentUnpaid('${row.id}')" ${row.status !== "booked" ? "disabled" : ""}>未付款</button>
               <button class="warning" onclick="markNoShow('${row.id}')" ${row.status !== "booked" ? "disabled" : ""}>未報到</button>
               <button class="danger" onclick="window.open('${cancelUrl}', '_blank')" ${row.status !== "booked" ? "disabled" : ""}>櫃台取消</button>
             </td>
@@ -385,6 +387,84 @@
     }
 
     function sendCheckinToGoogleScript(id, checkinStatus) {
+    async function updatePaymentStatus(id, paymentStatus) {
+
+  const row = currentRows.find(item => String(item.id) === String(id));
+
+  if (!row) {
+    alert("找不到此筆預約資料");
+    return;
+  }
+
+  const ok = confirm(
+    "確認將付款狀態改為「" + paymentStatus + "」嗎？"
+  );
+
+  if (!ok) return;
+
+  const { error } = await supabaseClient
+    .from("reservations")
+    .update({
+      payment_status: paymentStatus
+    })
+    .eq("id", id);
+
+  if (error) {
+    alert("更新付款狀態失敗：" + error.message);
+    return;
+  }
+
+  sendPaymentStatusToGoogleScript(row, paymentStatus);
+
+  alert("付款狀態已更新");
+
+  loadReservations();
+}
+
+function markPaymentPaid(id) {
+  updatePaymentStatus(id, "已匯款");
+}
+
+function markPaymentUnpaid(id) {
+  updatePaymentStatus(id, "未付款");
+}
+
+function sendPaymentStatusToGoogleScript(row, paymentStatus) {
+
+  const payload = {
+    action: "paymentStatus",
+    token: row.cancel_token,
+    paymentStatus: paymentStatus
+  };
+
+  const form = document.createElement("form");
+
+  form.method = "POST";
+  form.action = SCRIPT_URL;
+  form.target = "hidden_iframe";
+
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "payload";
+  input.value = JSON.stringify(payload);
+
+  form.appendChild(input);
+
+  document.body.appendChild(form);
+
+  form.submit();
+
+  setTimeout(() => {
+    document.body.removeChild(form);
+  }, 1000);
+}
+
+/* ← 新增到這裡 ↑↑↑ */
+
+window.addEventListener("DOMContentLoaded", function() {
+  document.getElementById("searchDate").value = getTodayString();
+  loadReservations();
+});
       const row = currentRows.find(item => String(item.id) === String(id));
       if (!row) {
         console.warn("找不到要同步到 Google Sheet 的預約資料");
