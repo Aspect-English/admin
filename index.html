@@ -387,96 +387,8 @@
     }
 
     function sendCheckinToGoogleScript(id, checkinStatus) {
-  const row = currentRows.find(item => String(item.id) === String(id));
-
-  if (!row) {
-    console.warn("找不到要同步到 Google Sheet 的預約資料");
-    return;
-  }
-
-  if (!row.cancel_token) {
-    alert("此筆資料缺少取消驗證碼，無法同步 Google Sheet。");
-    return;
-  }
-
-  const payload = {
-    action: "checkin",
-    token: row.cancel_token,
-    email: row.email || "",
-    phone: row.phone || "",
-    date: row.booking_date || "",
-    time: row.time_slot || "",
-    row: row.row_group || "",
-    checkinStatus: checkinStatus
-  };
-
-  postToGoogleScript(payload);
-}
-
-async function updatePaymentStatus(id, paymentStatus) {
-  const row = currentRows.find(item => String(item.id) === String(id));
-
-  if (!row) {
-    alert("找不到此筆預約資料");
-    return;
-  }
-
-  const ok = confirm("確認將付款狀態改為「" + paymentStatus + "」嗎？");
-  if (!ok) return;
-
-  const { error } = await supabaseClient
-    .from("reservations")
-    .update({ payment_status: paymentStatus })
-    .eq("id", id);
-
-  if (error) {
-    alert("更新付款狀態失敗：" + error.message);
-    return;
-  }
-
-  postToGoogleScript({
-    action: "paymentStatus",
-    token: row.cancel_token,
-    paymentStatus: paymentStatus
-  });
-
-  alert("付款狀態已更新為：" + paymentStatus);
-  loadReservations();
-}
-
-function markPaymentPaid(id) {
-  updatePaymentStatus(id, "已匯款");
-}
-
-function markPaymentUnpaid(id) {
-  updatePaymentStatus(id, "未付款");
-}
-
-function postToGoogleScript(payload) {
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = SCRIPT_URL;
-  form.target = "hidden_iframe";
-
-  const input = document.createElement("input");
-  input.type = "hidden";
-  input.name = "payload";
-  input.value = JSON.stringify(payload);
-
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
-
-  setTimeout(() => {
-    document.body.removeChild(form);
-  }, 1000);
-}
-
-window.addEventListener("DOMContentLoaded", function() {
-  document.getElementById("searchDate").value = getTodayString();
-  loadReservations();
-});
       const row = currentRows.find(item => String(item.id) === String(id));
+
       if (!row) {
         console.warn("找不到要同步到 Google Sheet 的預約資料");
         return;
@@ -498,6 +410,54 @@ window.addEventListener("DOMContentLoaded", function() {
         checkinStatus: checkinStatus
       };
 
+      postToGoogleScript(payload);
+    }
+
+    async function updatePaymentStatus(id, paymentStatus) {
+      const row = currentRows.find(item => String(item.id) === String(id));
+
+      if (!row) {
+        alert("找不到此筆預約資料");
+        return;
+      }
+
+      if (!row.cancel_token) {
+        alert("此筆資料缺少取消驗證碼，無法同步 Google Sheet。");
+        return;
+      }
+
+      const ok = confirm("確認將付款狀態改為「" + paymentStatus + "」嗎？");
+      if (!ok) return;
+
+      const { error } = await supabaseClient
+        .from("reservations")
+        .update({ payment_status: paymentStatus })
+        .eq("id", id);
+
+      if (error) {
+        alert("更新 Supabase 付款狀態失敗：" + error.message);
+        return;
+      }
+
+      postToGoogleScript({
+        action: "paymentStatus",
+        token: row.cancel_token,
+        paymentStatus: paymentStatus
+      });
+
+      alert("付款狀態已更新為：" + paymentStatus);
+      loadReservations();
+    }
+
+    function markPaymentPaid(id) {
+      updatePaymentStatus(id, "已匯款");
+    }
+
+    function markPaymentUnpaid(id) {
+      updatePaymentStatus(id, "未付款");
+    }
+
+    function postToGoogleScript(payload) {
       const form = document.createElement("form");
       form.method = "POST";
       form.action = SCRIPT_URL;
@@ -513,7 +473,9 @@ window.addEventListener("DOMContentLoaded", function() {
       form.submit();
 
       setTimeout(() => {
-        document.body.removeChild(form);
+        if (form.parentNode) {
+          document.body.removeChild(form);
+        }
       }, 1000);
     }
 
@@ -521,6 +483,7 @@ window.addEventListener("DOMContentLoaded", function() {
       document.getElementById("searchDate").value = getTodayString();
       loadReservations();
     });
+
   </script>
 </body>
 </html>
